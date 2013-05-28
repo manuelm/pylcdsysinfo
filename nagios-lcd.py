@@ -47,8 +47,9 @@ class Problem(object):
 
 class NagiosLCD(object):
   current_problems = []
-  lines = [plcd.TextLines.LINE_1, plcd.TextLines.LINE_2, plcd.TextLines.LINE_3,
-      plcd.TextLines.LINE_4, plcd.TextLines.LINE_5, plcd.TextLines.LINE_6]
+  lines = [ plcd.TextLines.LINE_1, plcd.TextLines.LINE_2, plcd.TextLines.LINE_3,
+      plcd.TextLines.LINE_4, plcd.TextLines.LINE_5, plcd.TextLines.LINE_6 ]
+
   images = {
       'UP':      Icon(10, 'images/up.bmp'),
       'DOWN':    Icon(11, 'images/down.bmp'),
@@ -75,6 +76,7 @@ class NagiosLCD(object):
     # display splash to hide the icon that appears after the first command
     #self.display_icon(0, self.images['SPLASH'])
     self.reset_problems()
+    self.__refresh = True
 
   def detach(self):
     del self.lcd
@@ -99,24 +101,29 @@ class NagiosLCD(object):
     self.lcd.display_text_on_line(line + 1, problem.descr, True,
         plcd.TextAlignment.LEFT, state.color)
 
-  def clear_lines(self, lines):
-    self.lcd.clear_lines(lines, plcd.BackgroundColours.BLACK)
+  def clear_lines(self, lines, color = plcd.BackgroundColours.BLACK):
+    self.lcd.clear_lines(lines, color)
 
   def reset_problems(self):
     self.current_problems = []
 
+  def display_splash(self, text, color):
+    self.clear_lines(plcd.TextLines.ALL, plcd.BackgroundColours.LIGHT_GREY)
+    self.display_icon(0, self.images['SPLASH'])
+    self.lcd.display_text_on_line(5, text, False, plcd.TextAlignment.CENTRE,
+        color)
+
   def display_all_up(self):
     print_verbose("No more problems. Displaying splash")
-    self.lcd.clear_lines(plcd.TextLines.ALL, plcd.BackgroundColours.LIGHT_GREY)
-    self.display_icon(0, self.images['SPLASH'])
-    self.lcd.display_text_on_line(5, "ALL UP", False, plcd.TextAlignment.CENTRE,
-        plcd.TextColours.GREEN)
+    self.display_splash("ALL UP", plcd.TextColours.GREEN)
     self.reset_problems()
 
   def display_problems(self, problems):
     # display splash
     if len(problems) == 0:
-      self.display_all_up()
+      if len(self.current_problems) > 0 or self.__refresh:
+        self.display_all_up()
+        self.__refresh = False
       return
 
     # sort problems by defined states
