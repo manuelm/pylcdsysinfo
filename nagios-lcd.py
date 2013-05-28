@@ -3,7 +3,7 @@
 
 from __future__ import print_function
 import pylcdsysinfo as plcd
-import argparse, sys, configparser, time, usb.core
+import argparse, sys, os, configparser, time, usb.core
 from collections import OrderedDict
 
 #-------------------------------------------------------------------------------
@@ -37,7 +37,7 @@ class Problem(object):
 
   def __eq__(self, other):
     if isinstance(other, Problem):
-      return self.state == other.state and self.descr == other.descr
+      return self.is_state(other.state) and self.descr == other.descr
     return NotImplemented
 
   def __str__(self):
@@ -312,6 +312,40 @@ class MYSQL_Fetcher(Fetcher):
 
 #-------------------------------------------------------------------------------
 
+def fork():
+  try:
+    pid = os.fork()
+    if pid > 0:
+      sys.exit(0)
+  except OSError as e:
+    print("Unable to fork: ({}) {}\n".format(e.errno, e.strerror), file=sys.stderr)
+    sys.exit(1)
+
+  os.umask(0)
+  os.setsid()
+
+  # fork again to remove a possible session leadership gained after setsid()
+  try:
+    pid = os.fork()
+    if pid > 0:
+      sys.exit(0)
+  except OSError as e:
+    print("Unable to fork: ({}) {}\n".format(e.errno, e.strerror), file=sys.stderr)
+    sys.exit(1)
+  return os.getpid()
+
+def redirect(stdin='/dev/null', stdout='/dev/null', stderr='/dev/null'):
+  for f in sys.stdout, sys.stderr:
+    f.flush()
+  ifd = open(stdin,  'r')
+  ofd = open(stdout, 'a+')
+  efd = ofd if (stdout == stderr) else open(stderr, 'a+')
+  os.dup2(ifd.fileno(), sys.stdin.fileno())
+  os.dup2(ofd.fileno(), sys.stdout.fileno())
+  os.dup2(efd.fileno(), sys.stderr.fileno())
+
+#-------------------------------------------------------------------------------
+
 def wait_for_lcd_attach(lcd):
   sleep = 60
   print("LCD removed from usb. Trying to reattach every {} seconds".format(sleep),
@@ -327,9 +361,12 @@ def wait_for_lcd_attach(lcd):
 
 def main():
   parser = argparse.ArgumentParser()
-  parser.add_argument('-v', '--verbose', action='store_true', help='be verbose')
-  parser.add_argument('-f', '--file', metavar='cfgfile', default="nagios-lcd.conf", help='path to config file')
-  parser.add_argument('-p', '--protocol', metavar='protocol', help='protocol to use')
+  parser.add_argument('-c', '--cfgfile',  metavar='cfgfile',   default="nagios-lcd.conf", help='path to config file')
+  parser.add_argument('-p', '--protocol', metavar='protocol',  help='protocol to use')
+  parser.add_argument('-l', '--logfile',  metavar='logfile')
+  parser.add_argument('-P', '--pidfile',  metavar='pidfile')
+  parser.add_argument('-n', '--nofork',   action='store_true', help='run in foreground')
+  parser.add_argument('-v', '--verbose',  action='store_true', help='be verbose')
   parser.add_argument('flash_images', nargs='?', choices=['flash_images'], help='write images to lcd flash')
   args = parser.parse_args()
 
@@ -340,7 +377,7 @@ def main():
     config = configparser.ConfigParser()
     config['LCD'] = {}
     config['HTTP'] = {}
-    config.read(args.file)
+    config.read(args.cfgfile)
   except Exception as e:
     print("Error while parsing configuration file: " + str(e), file=sys.stderr)
     sys.exit(1)
@@ -360,14 +397,35 @@ def main():
       print("Error: " + str(e), file=sys.stderr)
     sys.exit(0)
 
+  protocol = args.protocol if args.protocol else config['LCD'].get('protocol', 'HTTP')
+  logfile = args.logfile   if args.logfile else config['SERVICE'].get('logfile', None)
+  pidfile = args.pidfile   if args.pidfile else config['SERVICE'].get('pidfile', None)
+
+  if pidfile and os.path.isfile(pidfile):
+    print("Error: Pidfile '{}' already exists.\n".format(pidfile), file=sys.stderr)
+    print("Please make sure no other process is running and remove this file",
+        file=sys.stderr)
+    sys.exit(1)
+
+  pid = os.getpid()
+  if not args.nofork:
+    pid = fork()
+    if logfile is None:
+      logfile = '/dev/null'
+
+  if logfile is not None:
+      redirect('/dev/null', logfile, logfile)
+
+  if pidfile:
+    open(pidfile, 'w').write(str(pid))
+
   fetchers = {
     'HTTP':  HTTP_Fetcher,
     'MYSQL': MYSQL_Fetcher,
     'JSONFILE': JSONFile_Fetcher
   }
-  protocol = args.protocol if args.protocol else config['LCD'].get('protocol', 'HTTP')
-  print_verbose("Protocol is set to {}".format(protocol))
   try:
+    print_verbose("Protocol is set to {}".format(protocol))
     config = config[protocol] if config.has_section(protocol) else {}
     fetcher = fetchers[protocol](config)
   except KeyError as e:
@@ -390,6 +448,9 @@ def main():
       lcd.detach()
       wait_for_lcd_attach(lcd)
     fetcher.do_sleep()
+
+  if pidfile:
+    os.unlink(pidfile)
 
 if __name__ == '__main__':
   main()
