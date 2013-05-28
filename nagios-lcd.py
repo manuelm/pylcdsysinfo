@@ -59,9 +59,9 @@ class NagiosLCD(object):
   }
 
   states = OrderedDict()
-  states['DOWN'] = states['UNREACHABLE'] = State(images['DOWN'], plcd.TextColours.RED)
-  states['CRITICAL'] = states['WARNING'] = State(images['WARNING'], plcd.TextColours.YELLOW)
-  states['UNKNOWN'] = State(images['UNKNOWN'], plcd.TextColours.PURPLE)
+  states['DOWN'] = states['CRITICAL'] = State(images['DOWN'], plcd.TextColours.RED)
+  states['WARNING'] = State(images['WARNING'], plcd.TextColours.YELLOW)
+  states['UNREACHABLE'] = states['UNKNOWN'] = State(images['UNKNOWN'], plcd.TextColours.PURPLE)
   states['UP'] = states['OK'] = State(images['UP'], plcd.TextColours.GREEN)
 
   def __init__(self, index = 0):
