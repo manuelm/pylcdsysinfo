@@ -164,32 +164,34 @@ class Fetcher(object):
     raise NotImplementedError
 
   def _skip(self, d):
-    #if d['in_scheduled_downtime']:
+    #if d.get('in_scheduled_downtime', False):
     #  return True
-    #if d['is_flapping']:
+    #if d.get('is_flapping', False):
     #  return True
-    #if d['notifications_enabled']:
+    #if d.get('notifications_enabled', False):
     #  return True
-    #if d['has_been_acknowledged']:
+    #if d.get('has_been_acknowledged', False):
     #  return True
-    if d['state_type'] == 'SOFT':
-      (attempt, max_attempts) = d['attempts'].split('/')
+    if d.get('state_type', '') == 'SOFT':
+      (attempt, max_attempts) = d.get('attempts', '1/1').split('/')
       if int(attempt) == 1 and int(max_attempts) > 1:
         return True
     return False
 
   def parse(self, data):
     problems = []
-    for d in data['host_status']:
+    for d in data.get('host_status', {}):
       if self._skip(d):
         continue
-      problems.append(Problem(d['status'], d['host_display_name']))
+      problems.append(Problem(d.get('status', 'UNKNOWN'),
+        "[{}]".format(d.get('host_display_name', 'UNKNOWN'))))
 
-    for d in data['service_status']:
+    for d in data.get('service_status', {}):
       if self._skip(d):
         continue
-      problems.append(Problem(d['status'],
-        "{} {}".format(d['host_display_name'], d['service_display_name'])))
+      problems.append(Problem(d.get('status', 'UNKNOWN'),
+        "[{}] {}".format(d.get('host_display_name', 'UNKNOWN'),
+          d.get('service_display_name', 'UNKNOWN'))))
     return problems
 
   def do_sleep(self):
