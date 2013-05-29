@@ -317,13 +317,16 @@ class MYSQL_Fetcher(Fetcher):
 class Service(object):
   def __init__(self):
     self.pid = os.getpid()
+    self.__pidfile_written = False
 
   def set_pidfile(self, pidfile):
+    if self.__pidfile_written:
+      return False
     self.pidfile = pidfile
     return self.check_pidfile()
 
   def __del__(self):
-    if self.pidfile:
+    if self.pidfile and self.__pidfile_written:
       os.unlink(self.pidfile)
 
   def check_pidfile(self):
@@ -337,6 +340,7 @@ class Service(object):
   def write_pid(self):
     if self.pidfile:
       open(self.pidfile, 'w').write(str(self.pid))
+      self.__pidfile_written = True
 
   def set_logfile(self, logfile):
     self.logfile = logfile
