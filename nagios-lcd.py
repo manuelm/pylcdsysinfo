@@ -314,37 +314,65 @@ class MYSQL_Fetcher(Fetcher):
 
 #-------------------------------------------------------------------------------
 
-def fork():
-  try:
-    pid = os.fork()
-    if pid > 0:
-      sys.exit(0)
-  except OSError as e:
-    print("Unable to fork: ({}) {}\n".format(e.errno, e.strerror), file=sys.stderr)
-    sys.exit(1)
+class Service(object):
+  def __init__(self):
+    self.pid = os.getpid()
 
-  os.umask(0)
-  os.setsid()
+  def set_pidfile(self, pidfile):
+    self.pidfile = pidfile
+    return self.check_pidfile()
 
-  # fork again to remove a possible session leadership gained after setsid()
-  try:
-    pid = os.fork()
-    if pid > 0:
-      sys.exit(0)
-  except OSError as e:
-    print("Unable to fork: ({}) {}\n".format(e.errno, e.strerror), file=sys.stderr)
-    sys.exit(1)
-  return os.getpid()
+  def __del__(self):
+    if self.pidfile:
+      os.unlink(self.pidfile)
 
-def redirect(stdin='/dev/null', stdout='/dev/null', stderr='/dev/null'):
-  for f in sys.stdout, sys.stderr:
-    f.flush()
-  ifd = open(stdin,  'r')
-  ofd = open(stdout, 'a+')
-  efd = ofd if (stdout == stderr) else open(stderr, 'a+')
-  os.dup2(ifd.fileno(), sys.stdin.fileno())
-  os.dup2(ofd.fileno(), sys.stdout.fileno())
-  os.dup2(efd.fileno(), sys.stderr.fileno())
+  def check_pidfile(self):
+    if self.pidfile and os.path.isfile(self.pidfile):
+      print("Error: Pidfile '{}' already exists.\n".format(self.pidfile), file=sys.stderr)
+      print("Please make sure no other process is running and remove this file",
+          file=sys.stderr)
+      return False
+    return True
+
+  def write_pid(self):
+    if self.pidfile:
+      open(self.pidfile, 'w').write(str(self.pid))
+
+  def set_logfile(self, logfile):
+    self.logfile = logfile
+
+  def fork(self):
+    try:
+      pid = os.fork()
+      if pid > 0:
+        sys.exit(0)
+    except OSError as e:
+      print("Unable to fork: ({}) {}\n".format(e.errno, e.strerror), file=sys.stderr)
+      sys.exit(1)
+
+    os.umask(0)
+    os.setsid()
+
+    # fork again to remove a possible session leadership gained after setsid()
+    try:
+      pid = os.fork()
+      if pid > 0:
+        sys.exit(0)
+    except OSError as e:
+      print("Unable to fork: ({}) {}\n".format(e.errno, e.strerror), file=sys.stderr)
+      sys.exit(1)
+    self.pid = os.getpid()
+    return self.pid
+
+  def redirect(self, stdin='/dev/null', stdout='/dev/null', stderr='/dev/null'):
+    for f in sys.stdout, sys.stderr:
+      f.flush()
+    ifd = open(stdin,  'r')
+    ofd = open(stdout, 'a+')
+    efd = ofd if (stdout == stderr) else open(stderr, 'a+')
+    os.dup2(ifd.fileno(), sys.stdin.fileno())
+    os.dup2(ofd.fileno(), sys.stdout.fileno())
+    os.dup2(efd.fileno(), sys.stderr.fileno())
 
 #-------------------------------------------------------------------------------
 
@@ -403,23 +431,16 @@ def main():
   logfile = args.logfile   if args.logfile else config['SERVICE'].get('logfile', None)
   pidfile = args.pidfile   if args.pidfile else config['SERVICE'].get('pidfile', None)
 
-  if pidfile and os.path.isfile(pidfile):
-    print("Error: Pidfile '{}' already exists.\n".format(pidfile), file=sys.stderr)
-    print("Please make sure no other process is running and remove this file",
-        file=sys.stderr)
+  service = Service()
+  if not service.set_pidfile(pidfile):
     sys.exit(1)
-
-  pid = os.getpid()
   if not args.nofork:
-    pid = fork()
+    service.fork()
     if logfile is None:
       logfile = '/dev/null'
-
   if logfile is not None:
-      redirect('/dev/null', logfile, logfile)
-
-  if pidfile:
-    open(pidfile, 'w').write(str(pid))
+      service.redirect('/dev/null', logfile, logfile)
+  service.write_pid()
 
   fetchers = {
     'HTTP':  HTTP_Fetcher,
@@ -450,9 +471,6 @@ def main():
       lcd.detach()
       wait_for_lcd_attach(lcd)
     fetcher.do_sleep()
-
-  if pidfile:
-    os.unlink(pidfile)
 
 if __name__ == '__main__':
   main()
