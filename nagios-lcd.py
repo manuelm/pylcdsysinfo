@@ -95,6 +95,8 @@ class NagiosLCD(object):
     self.lcd.display_icon(pos, image.slot)
 
   def display_problem(self, line, problem):
+    if line >= len(self.lines):
+      return
     print_verbose("Displaying problem {} on line {}...".format(str(problem), line))
     state = self.states[problem.state]
     self.display_icon(line * 8, state.image)
