@@ -150,7 +150,7 @@ class NagiosLCD(object):
     # clear old problems
     clear_lines = 0
     for i in range(len(new_problems), len(self.current_problems)):
-      if line < len(self.lines):
+      if i < len(self.lines):
         clear_lines |= self.lines[i]
     if clear_lines > 0:
       self.clear_lines(clear_lines)
